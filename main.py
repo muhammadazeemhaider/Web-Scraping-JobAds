@@ -4,7 +4,48 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 import json
+import time
+
+def fetch_job_details(driver, job_element):
+    job_data = {}
+    try:
+        # Click on the job title to open detailed view
+        title_element = job_element.find_element(By.CLASS_NAME, 's-18')
+        title_element.click()
+
+        # Wait for the detailed view to load
+        wait = WebDriverWait(driver, 10)
+        wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'jcnt')))
+
+        # Extract gender information
+        try:
+            gender_element = driver.find_element(By.XPATH, "//b[text()='Gender']/following-sibling::div")
+            job_data['gender'] = gender_element.text.strip()
+        except NoSuchElementException:
+            job_data['gender'] = "Not specified"
+
+        # Other job details
+        job_data['title'] = title_element.get_attribute('title')
+        job_data['company'] = job_element.find_element(By.CLASS_NAME, 'cname').text.strip()
+        job_data['description'] = job_element.find_element(By.CLASS_NAME, 'jbody').text.strip()
+        job_data['posted_on'] = job_element.find_element(By.CSS_SELECTOR, 'span[data-original-title="Posted On"]').text.strip()
+        job_data['experience'] = job_element.find_element(By.CSS_SELECTOR, '.func-area-drn').text.strip()
+        
+        try:
+            job_data['salary'] = job_element.find_element(By.CSS_SELECTOR, 'span[data-original-title="Offer Salary - PKR"] span').text.strip()
+        except NoSuchElementException:
+            job_data['salary'] = "Not specified"
+
+        # Navigate back to the job list
+        driver.back()
+        wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'job')))
+
+    except Exception as e:
+        print(f"Error processing job details: {e}")
+
+    return job_data
 
 def fetch_jobs_from_page(driver, job_number):
     url = f'https://www.rozee.pk/job/jsearch/q/all/fin/1/fpn/{job_number}'
@@ -20,42 +61,11 @@ def fetch_jobs_from_page(driver, job_number):
     jobs_data = []
 
     for job in job_elements:
-        job_data = {}
-        try:
-            # Title
-            h3_tag = job.find_element(By.CLASS_NAME, 's-18')
-            if h3_tag:
-                job_data['title'] = h3_tag.get_attribute('title')
-
-            # Company name
-            company_name_element = job.find_element(By.CLASS_NAME, 'cname')
-            if company_name_element:
-                job_data['company'] = company_name_element.text.strip()
-
-            # Description
-            description = job.find_element(By.CLASS_NAME, 'jbody')
-            if description:
-                job_data['description'] = description.text.strip()
-
-            # Posted date
-            posted_on = job.find_element(By.CSS_SELECTOR, 'span[data-original-title="Posted On"]')
-            if posted_on:
-                job_data['posted_on'] = posted_on.text.strip()
-
-            # Experience
-            experience = job.find_element(By.CSS_SELECTOR, '.func-area-drn')
-            if experience:
-                job_data['experience'] = experience.text.strip()
-
-            # Salary
-            salary = job.find_element(By.CSS_SELECTOR, 'span[data-original-title="Offer Salary - PKR"] span')
-            if salary:
-                job_data['salary'] = salary.text.strip()
-
+        job_data = fetch_job_details(driver, job)
+        if job_data:
             jobs_data.append(job_data)
-        except Exception as e:
-            print(f"Error processing job: {e}")
-    
+        time.sleep(1)  # Add a small delay between job scrapes
+
     return jobs_data
 
 def fetch_all_jobs():
@@ -68,7 +78,8 @@ def fetch_all_jobs():
         page_jobs = fetch_jobs_from_page(driver, job_number)
         all_jobs_data.extend(page_jobs)
         print(f"Scraped page {job_number//20 + 1}")
-    
+        time.sleep(2)  # Add a delay between pages
+
     driver.quit()
     return all_jobs_data
 
@@ -78,7 +89,7 @@ def main():
     json_output = json.dumps(jobs, indent=2, ensure_ascii=False)
     print(f"Total jobs scraped: {len(jobs)}")
 
-    with open('all_jobs_data.json', 'w', encoding='utf-8') as f:
+    with open('data.json', 'w', encoding='utf-8') as f:
         f.write(json_output)
 
 if __name__ == '__main__':
